@@ -18,6 +18,7 @@ import requests
 from pymongo import MongoClient
 
 ROOT_DIR = Path(__file__).parent
+if os.getenv("RENDER") is None:
 load_dotenv(ROOT_DIR / '.env')
 
 # MongoDB connection
