@@ -212,7 +212,6 @@ def get_stock_data(symbols: List[str]) -> Dict[str, Any]:
         logging.error(f"Error fetching stock data: {e}")
         return {}
 
-# Auth Routes
 @api_router.post("/auth/register")
 async def register(user_data: UserCreate):
     # Check if user exists
@@ -220,19 +219,23 @@ async def register(user_data: UserCreate):
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
     
-    # Create user
-    hashed_password = get_password_hash(user_data.password)
+    # Passwort kürzen und hashen
+    truncated_password = user_data.password[:72]
+    hashed_password = get_password_hash(truncated_password)
+    
+    # User erstellen
     user = User(
         email=user_data.email,
         name=user_data.name
     )
     
-    # Save to database
+    # In DB speichern
     user_dict = prepare_for_mongo(user.dict())
     user_dict['hashed_password'] = hashed_password
     await db.users.insert_one(user_dict)
     
     return {"message": "User registered successfully", "user_id": user.id}
+
 
 @api_router.post("/auth/login")
 async def login(user_data: UserLogin, response: Response):
