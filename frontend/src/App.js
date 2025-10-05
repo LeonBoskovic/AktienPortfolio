@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+import React, { useState, useEffect, createContext, useContext } from 'react';
+import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import axios from 'axios';
@@ -15,7 +15,22 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select';
 import { toast } from 'sonner';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { TrendingUp, TrendingDown, Plus, Minus, Eye, EyeOff, BarChart3, PieChart as PieChartIcon, Wallet, Target } from 'lucide-react';
+import { 
+  TrendingUp, 
+  TrendingDown, 
+  Plus, 
+  Minus, 
+  Eye, 
+  EyeOff, 
+  BarChart3, 
+  PieChart as PieChartIcon, 
+  Wallet, 
+  Target,
+  LogOut,
+  User,
+  Trash2,
+  X
+} from 'lucide-react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -30,6 +45,103 @@ const queryClient = new QueryClient({
   },
 });
 
+// Auth Context
+const AuthContext = createContext({
+  user: null,
+  login: () => {},
+  logout: () => {},
+  isAuthenticated: false,
+  isLoading: true
+});
+
+// Auth Provider
+const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Check for session ID in URL fragment (Emergent OAuth callback)
+  useEffect(() => {
+    const checkSessionId = async () => {
+      const hash = window.location.hash;
+      if (hash.includes('session_id=')) {
+        setIsLoading(true);
+        const sessionId = hash.split('session_id=')[1].split('&')[0];
+        
+        try {
+          const response = await axios.post(`${API}/auth/google`, {}, {
+            headers: { 'X-Session-ID': sessionId }
+          });
+          
+          setUser(response.data.user);
+          
+          // Clean URL
+          window.history.replaceState({}, document.title, window.location.pathname);
+          
+          toast.success('Erfolgreich angemeldet!');
+        } catch (error) {
+          console.error('Google auth error:', error);
+          toast.error('Anmeldung fehlgeschlagen');
+        } finally {
+          setIsLoading(false);
+        }
+        return;
+      }
+      
+      // Check existing session
+      checkExistingSession();
+    };
+    
+    checkSessionId();
+  }, []);
+
+  const checkExistingSession = async () => {
+    try {
+      const response = await axios.get(`${API}/auth/me`, {
+        withCredentials: true
+      });
+      setUser(response.data);
+    } catch (error) {
+      console.log('No existing session');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const login = (userData) => {
+    setUser(userData);
+  };
+
+  const logout = async () => {
+    try {
+      await axios.post(`${API}/auth/logout`, {}, {
+        withCredentials: true
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      setUser(null);
+      toast.success('Abgemeldet');
+    }
+  };
+
+  return (
+    <AuthContext.Provider value={{
+      user,
+      login,
+      logout,
+      isAuthenticated: !!user,
+      isLoading
+    }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+const useAuth = () => useContext(AuthContext);
+
+// Configure axios defaults
+axios.defaults.withCredentials = true;
+
 // Mock chart data for demonstration
 const mockChartData = [
   { name: 'Jan', value: 10000 },
@@ -43,9 +155,28 @@ const mockChartData = [
 
 const colors = ['#10B981', '#3B82F6', '#8B5CF6', '#F59E0B', '#EF4444', '#06B6D4'];
 
+// Protected Route Component
+const ProtectedRoute = ({ children }) => {
+  const { isAuthenticated, isLoading } = useAuth();
+  
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Laden...</p>
+        </div>
+      </div>
+    );
+  }
+  
+  return isAuthenticated ? children : <Navigate to="/login" replace />;
+};
+
 // Navigation Component
 const Navigation = () => {
   const location = useLocation();
+  const { user, logout } = useAuth();
   
   return (
     <nav className="bg-white border-b border-gray-200 sticky top-0 z-50">
@@ -92,9 +223,184 @@ const Navigation = () => {
               </Link>
             </div>
           </div>
+          
+          {user && (
+            <div className="flex items-center space-x-4">
+              <span className="text-sm text-gray-600">Hallo, {user.name}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={logout}
+                className="text-gray-600 hover:text-gray-900"
+              >
+                <LogOut className="w-4 h-4 mr-2" />
+                Abmelden
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </nav>
+  );
+};
+
+// Login/Register Component
+const AuthPage = () => {
+  const [isLogin, setIsLogin] = useState(true);
+  const [formData, setFormData] = useState({
+    email: '',
+    name: '',
+    password: ''
+  });
+  const [isLoading, setIsLoading] = useState(false);
+  const { login } = useAuth();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+
+    try {
+      const endpoint = isLogin ? '/auth/login' : '/auth/register';
+      const data = isLogin 
+        ? { email: formData.email, password: formData.password }
+        : formData;
+
+      const response = await axios.post(`${API}${endpoint}`, data);
+      
+      if (isLogin) {
+        login(response.data.user);
+        toast.success('Erfolgreich angemeldet!');
+      } else {
+        toast.success('Registrierung erfolgreich! Bitte melden Sie sich an.');
+        setIsLogin(true);
+        setFormData({ email: '', name: '', password: '' });
+      }
+    } catch (error) {
+      const message = error.response?.data?.detail || 'Ein Fehler ist aufgetreten';
+      toast.error(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = () => {
+    const redirectUrl = encodeURIComponent(window.location.origin);
+    window.location.href = `https://auth.emergentagent.com/?redirect=${redirectUrl}`;
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-blue-50 flex items-center justify-center">
+      <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-xl shadow-lg">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-gradient-to-br from-emerald-400 to-blue-500 rounded-xl flex items-center justify-center mx-auto mb-4">
+            <BarChart3 className="h-8 w-8 text-white" />
+          </div>
+          <h2 className="text-3xl font-bold text-gray-900">
+            {isLogin ? 'Anmelden' : 'Registrieren'}
+          </h2>
+          <p className="mt-2 text-gray-600">
+            {isLogin 
+              ? 'Melden Sie sich in Ihrem Portfolio an' 
+              : 'Erstellen Sie Ihr Portfolio-Konto'
+            }
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <Label htmlFor="email">E-Mail</Label>
+            <Input
+              id="email"
+              data-testid="auth-email-input"
+              type="email"
+              required
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            />
+          </div>
+
+          {!isLogin && (
+            <div>
+              <Label htmlFor="name">Name</Label>
+              <Input
+                id="name"
+                data-testid="auth-name-input"
+                type="text"
+                required
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              />
+            </div>
+          )}
+
+          <div>
+            <Label htmlFor="password">Passwort</Label>
+            <Input
+              id="password"
+              data-testid="auth-password-input"
+              type="password"
+              required
+              value={formData.password}
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+            />
+          </div>
+
+          <Button 
+            type="submit" 
+            data-testid="auth-submit-button"
+            className="w-full" 
+            disabled={isLoading}
+          >
+            {isLoading 
+              ? (isLogin ? 'Wird angemeldet...' : 'Wird registriert...') 
+              : (isLogin ? 'Anmelden' : 'Registrieren')
+            }
+          </Button>
+        </form>
+
+        <div className="text-center">
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-300" />
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-white text-gray-500">oder</span>
+            </div>
+          </div>
+
+          <Button
+            onClick={handleGoogleLogin}
+            variant="outline"
+            className="w-full mt-4"
+            data-testid="google-login-button"
+          >
+            <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+            </svg>
+            Mit Google anmelden
+          </Button>
+        </div>
+
+        <div className="text-center">
+          <button
+            type="button"
+            onClick={() => {
+              setIsLogin(!isLogin);
+              setFormData({ email: '', name: '', password: '' });
+            }}
+            className="text-emerald-600 hover:text-emerald-500 text-sm"
+          >
+            {isLogin 
+              ? 'Noch kein Konto? Hier registrieren' 
+              : 'Bereits ein Konto? Hier anmelden'
+            }
+          </button>
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -159,7 +465,7 @@ const PortfolioSummary = ({ summary }) => {
 };
 
 // Portfolio Holdings Component
-const PortfolioHoldings = ({ portfolio }) => {
+const PortfolioHoldings = ({ portfolio, onRefresh }) => {
   const formatCurrency = (value) => {
     return new Intl.NumberFormat('de-DE', {
       style: 'currency',
@@ -170,6 +476,21 @@ const PortfolioHoldings = ({ portfolio }) => {
   const formatPercentage = (value) => {
     const sign = value >= 0 ? '+' : '';
     return `${sign}${value.toFixed(2)}%`;
+  };
+
+  const closePosition = async (symbol) => {
+    if (!window.confirm(`Möchten Sie die Position ${symbol} wirklich schließen? Alle Trades für diese Aktie werden gelöscht.`)) {
+      return;
+    }
+
+    try {
+      await axios.delete(`${API}/portfolio/${symbol}`);
+      toast.success(`Position ${symbol} geschlossen`);
+      onRefresh?.();
+    } catch (error) {
+      toast.error('Fehler beim Schließen der Position');
+      console.error(error);
+    }
   };
 
   if (!portfolio || portfolio.length === 0) {
@@ -203,12 +524,23 @@ const PortfolioHoldings = ({ portfolio }) => {
                   Ø {formatCurrency(position.avg_price)} • Aktuell {formatCurrency(position.current_price)}
                 </p>
               </div>
-              <div className="text-right">
-                <div className="font-semibold">{formatCurrency(position.market_value)}</div>
-                <div className={`flex items-center text-sm ${position.pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                  {position.pnl >= 0 ? <TrendingUp className="w-4 h-4 mr-1" /> : <TrendingDown className="w-4 h-4 mr-1" />}
-                  {formatCurrency(position.pnl)} ({formatPercentage(position.pnl_percentage)})
+              <div className="flex items-center space-x-4">
+                <div className="text-right">
+                  <div className="font-semibold">{formatCurrency(position.market_value)}</div>
+                  <div className={`flex items-center text-sm ${position.pnl >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {position.pnl >= 0 ? <TrendingUp className="w-4 h-4 mr-1" /> : <TrendingDown className="w-4 h-4 mr-1" />}
+                    {formatCurrency(position.pnl)} ({formatPercentage(position.pnl_percentage)})
+                  </div>
                 </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => closePosition(position.symbol)}
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                  data-testid={`close-position-${position.symbol}`}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
               </div>
             </div>
           ))}
@@ -247,7 +579,8 @@ const AddTradeForm = ({ onTradeAdded }) => {
       setFormData({ symbol: '', quantity: '', price: '', trade_type: 'buy' });
       onTradeAdded?.();
     } catch (error) {
-      toast.error('Fehler beim Hinzufügen des Trades');
+      const message = error.response?.data?.detail || 'Fehler beim Hinzufügen des Trades';
+      toast.error(message);
       console.error(error);
     } finally {
       setIsLoading(false);
@@ -353,7 +686,10 @@ const Dashboard = () => {
       setPortfolio(portfolioRes.data);
       setSummary(summaryRes.data);
     } catch (error) {
-      toast.error('Fehler beim Laden der Daten');
+      const message = error.response?.status === 401 
+        ? 'Bitte melden Sie sich an'
+        : 'Fehler beim Laden der Daten';
+      toast.error(message);
       console.error(error);
     } finally {
       setIsLoading(false);
@@ -413,7 +749,7 @@ const Dashboard = () => {
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
           <div className="lg:col-span-2">
-            <PortfolioHoldings portfolio={portfolio} />
+            <PortfolioHoldings portfolio={portfolio} onRefresh={fetchData} />
           </div>
           
           <div className="space-y-6">
@@ -489,7 +825,10 @@ const TradesPage = () => {
       const response = await axios.get(`${API}/trades`);
       setTrades(response.data);
     } catch (error) {
-      toast.error('Fehler beim Laden der Trades');
+      const message = error.response?.status === 401 
+        ? 'Bitte melden Sie sich an'
+        : 'Fehler beim Laden der Trades';
+      toast.error(message);
       console.error(error);
     } finally {
       setIsLoading(false);
@@ -605,7 +944,10 @@ const WatchlistPage = () => {
       const response = await axios.get(`${API}/watchlist`);
       setWatchlist(response.data);
     } catch (error) {
-      toast.error('Fehler beim Laden der Watchlist');
+      const message = error.response?.status === 401 
+        ? 'Bitte melden Sie sich an'
+        : 'Fehler beim Laden der Watchlist';
+      toast.error(message);
       console.error(error);
     } finally {
       setIsLoading(false);
@@ -623,7 +965,8 @@ const WatchlistPage = () => {
       setNewSymbol('');
       fetchWatchlist();
     } catch (error) {
-      toast.error('Fehler beim Hinzufügen zur Watchlist');
+      const message = error.response?.data?.detail || 'Fehler beim Hinzufügen zur Watchlist';
+      toast.error(message);
       console.error(error);
     } finally {
       setIsAdding(false);
@@ -763,16 +1106,43 @@ const WatchlistPage = () => {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <div className="App">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/trades" element={<TradesPage />} />
-            <Route path="/watchlist" element={<WatchlistPage />} />
-          </Routes>
-          <Toaster position="top-right" />
-        </div>
-      </BrowserRouter>
+      <AuthProvider>
+        <BrowserRouter>
+          <div className="App">
+            <Routes>
+              <Route 
+                path="/login" 
+                element={<AuthPage />}
+              />
+              <Route 
+                path="/" 
+                element={
+                  <ProtectedRoute>
+                    <Dashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route 
+                path="/trades" 
+                element={
+                  <ProtectedRoute>
+                    <TradesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route 
+                path="/watchlist" 
+                element={
+                  <ProtectedRoute>
+                    <WatchlistPage />
+                  </ProtectedRoute>
+                }
+              />
+            </Routes>
+            <Toaster position="top-right" />
+          </div>
+        </BrowserRouter>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }
