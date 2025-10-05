@@ -131,6 +131,7 @@ def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password):
+    password = password[:72]
     return pwd_context.hash(password)
 
 def create_session_token():
@@ -223,8 +224,7 @@ async def register(user_data: UserCreate):
     hashed_password = get_password_hash(user_data.password)
     user = User(
         email=user_data.email,
-        name=user_data.name,
-        password=hashed_password
+        name=user_data.name
     )
     
     # Save to database
