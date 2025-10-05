@@ -223,7 +223,8 @@ async def register(user_data: UserCreate):
     hashed_password = get_password_hash(user_data.password)
     user = User(
         email=user_data.email,
-        name=user_data.name
+        name=user_data.name,
+        password=hashed_password
     )
     
     # Save to database
