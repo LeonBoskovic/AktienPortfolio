@@ -554,9 +554,6 @@ async def get_market_overview():
 
 
 
-
-]
-
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
