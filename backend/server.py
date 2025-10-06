@@ -238,8 +238,7 @@ async def register(user_data: UserCreate):
     user_dict['hashed_password'] = hashed_password
     await db.users.insert_one(user_dict)
 
-    return JSONResponse({"success": True, "message": "User
-registered successfully"})
+    return JSONResponse({"success": True, "message": "User registered successfully"})
 
 
 
