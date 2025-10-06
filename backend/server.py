@@ -1,4 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response
+from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPBearer
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -237,7 +238,8 @@ async def register(user_data: UserCreate):
     user_dict['hashed_password'] = hashed_password
     await db.users.insert_one(user_dict)
     
-    return {"message": "User registered successfully", "user_id": user.id}
+    return {"message": "User registered successfully",      
+"user_id": user.id}
 
 
 
