@@ -8,7 +8,10 @@ export default function Register() {
   const handleRegister = async (e) => {
     e.preventDefault();
 
-    const response = await fetch("/api/auth/register", {
+    // Nutzt die Backend-URL aus der Umgebungsvariable
+    const backendUrl = process.env.REACT_APP_BACKEND_URL;
+
+    const response = await fetch(`${backendUrl}/api/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, name, password }),
