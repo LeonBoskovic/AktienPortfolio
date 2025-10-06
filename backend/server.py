@@ -553,8 +553,10 @@ async def get_market_overview():
     
     return {symbol: info for symbol, info in data.items() if info is not None}
 
-# Include the router in the main app
-app.include_router(api_router)
+
+
+
+]
 
 app.add_middleware(
     CORSMiddleware,
@@ -563,6 +565,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include the router in the main app
+app.include_router(api_router)
 
 # Configure logging
 logging.basicConfig(
